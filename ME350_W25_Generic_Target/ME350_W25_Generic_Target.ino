@@ -26,15 +26,15 @@ long previousVelCompTime   = 0;                    // [microseconds] System cloc
 // CONSTANTS:
 // Target positions:
 const int TARGET_1_POSITION    = 0;
-const int TARGET_2_POSITION    = 117; // board 6, 119
-const int TARGET_3_POSITION    = 235; // board 6, 245
-const int TARGET_4_POSITION    = 565; // board 6, 565
-const int WAIT_POSITION        = 282; // board 6, 280
+const int TARGET_2_POSITION    = 119; // board 3, 117 // board 6, 119
+const int TARGET_3_POSITION    = 239; // board 3, 235 // board 6, 245
+const int TARGET_4_POSITION    = 565;// board 3, 565 // board 6, 565
+const int WAIT_POSITION        = 282;// board 3, 282; // board 6, 280
 const int LOWER_BOUND          = TARGET_1_POSITION;    // [encoder counts] Position of the left end stop
 const int UPPER_BOUND          = TARGET_4_POSITION;    // [encoder counts] Position of the right end stop
 const int TARGET_BAND          = 5;                   // [encoder counts] "Close enough" range when moving towards a target.
 // VARIABLES:
-int activeTargetPosition = TARGET_4_POSITION;             // [encoder counts] position of the currently active target
+int activeTargetPosition = TARGET_2_POSITION;             // [encoder counts] position of the currently active target
 
 //** PID Controller  **//
 // CONSTANTS:

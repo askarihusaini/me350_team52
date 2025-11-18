@@ -1,5 +1,5 @@
-// ME350 Target Dropping Sketch - Version 04.2 by Eli Parham
-// updated 11-3-2022
+// ME350 Zombie Defense Sketch - Version 05.1 by Spencer Dickhudt
+// updated 12-5-2024
 //
 //
 
@@ -11,7 +11,7 @@
 // CONSTANTS: 
 // Definition of states in the state machine
 const int CALIBRATE                = 1;
-const int DETERMINE_ACTIVE_TARGETS = 2;
+const int CHOOSE_ACTIVE_TARGET     = 2;
 const int MOVE_TO_TARGET           = 3;
 
 // VARIABLES:
@@ -21,39 +21,71 @@ int state = CALIBRATE;
 
 //** Proximity Sensors or Potentiometer: **//
 // CONSTANTS: 
-// Definition of proximity sensor thresholds for each target:
-const int TARGET1_PROXIMITYSENSE1_MIN = 0;     // [proximity sensor counts] Min value prox sensor 1 reads when target 1 is active
-const int TARGET2_PROXIMITYSENSE1_MIN = 0;     // [proximity sensor counts] Min value prox sensor 1 reads when target 2 is active
-const int TARGET2_PROXIMITYSENSE1_MAX = 0;     // [proximity sensor counts] Max value prox sensor 1 reads when target 2 is active
-const int TARGET3_PROXIMITYSENSE1_MIN = 0;     // [proximity sensor counts] Min value prox sensor 1 reads when target 3 is active
-const int TARGET3_PROXIMITYSENSE1_MAX = 0;     // [proximity sensor counts] Max value prox sensor 1 reads when target 3 is active
-const int TARGET3_PROXIMITYSENSE2_MIN = 0;     // [proximity sensor counts] Min value prox sensor 2 reads when target 3 is active
-const int TARGET3_PROXIMITYSENSE2_MAX = 0;     // [proximity sensor counts] Max value prox sensor 2 reads when target 3 is active
-const int TARGET4_PROXIMITYSENSE2_MIN = 0;     // [proximity sensor counts] Min value prox sensor 2 reads when target 4 is active
-const int TARGET4_PROXIMITYSENSE2_MAX = 0;     // [proximity sensor counts] Max value prox sensor 2 reads when target 4 is active
-const int TARGET5_PROXIMITYSENSE2_MIN = 0;     // [proximity sensor counts] Min value prox sensor 2 reads when target 5 is active
-const int TARGETNONE_PROXIMITYSENSE1_MAX = 0;  // [proximity sensor counts] Max value prox sensor 1 reads when no target is active
-const int TARGETNONE_PROXIMITYSENSE2_MAX = 0;  // [proximity sensor counts] Max value prox sensor 2 reads when no target is active
+// Definition of proximity sensor Limits for each target:
+const int PROXIMITYSENSE1_MAX = 105;
+const int PROXIMITYSENSE2_MAX = 148;
+const int PROXIMITYSENSE3_MAX = 137;
+const int PROXIMITYSENSE4_MAX = 100;
+const int PROXIMITYSENSE1_MIN = 603;
+const int PROXIMITYSENSE2_MIN = 591;
+const int PROXIMITYSENSE3_MIN = 590;
+const int PROXIMITYSENSE4_MIN = 614;   
+
+const int ProxRange[4][2] = {{PROXIMITYSENSE1_MAX, PROXIMITYSENSE1_MIN},
+                             {PROXIMITYSENSE2_MAX, PROXIMITYSENSE2_MIN},
+                             {PROXIMITYSENSE3_MAX, PROXIMITYSENSE3_MIN},
+                             {PROXIMITYSENSE4_MAX, PROXIMITYSENSE4_MIN}}; // Array holding prox sensor bounds to improve code readability
+
 // Definition of target variables for array indexing
 const int TARGET1  = 0;   // For indexing into activeTargets array, activeTargets[0] corresponds to Target 1
 const int TARGET2  = 1;   // For indexing into activeTargets array, activeTargets[1] corresponds to Target 2
 const int TARGET3  = 2;   // For indexing into activeTargets array, activeTargets[2] corresponds to Target 3
 const int TARGET4  = 3;   // For indexing into activeTargets array, activeTargets[3] corresponds to Target 4
-const int TARGET5  = 4;   // For indexing into activeTargets array, activeTargets[4] corresponds to Target 5
-const int ACTIVE   = 1;   // In activeTargets array, a 1 means the corresponding target is active
-const int INACTIVE = 0;   // In activeTargets array, a 0 means the corresponding target is inactive
-const int UNSURE   = -1;  // In activeTargets array, a -1 means the corresponding target is not visible
+
+const int targetArr[4] = { TARGET1, TARGET2, TARGET3, TARGET4 };  // List of target indices to reduce redundant code
+
+// Direction variables to represent the movement of each zombie
+const int FORWARD = 1;      // representing the zombie moving towards the photosensor
+const int BACKWARD = -1;    // representing the zombie moving away from the photosensor
+const int STOPPED = 0;      // representing the zombie stalled
+
 // VARIABLES:
-// Create variables that read and average proximity sensor or potentiometer readings:
-int proximitySense1Values[20]; // Holds 20 proximity sensor readings for averaging
-int proximitySense2Values[20]; // Holds 20 proximity sensor readings for averaging
-float proximitySense1Avg = 0;  // Average of all values in proximitySense1Values
-float proximitySense2Avg = 0;  // Average of all values in proximitySense2Values
-int potValue = 0;              // Used to hold the reading of the potentiometer
-// Variable to keep track of active targets:
-int activeTargets[5] = {-1, -1, -1, -1, -1}; // Shows whether or not each of the five targets is active. -1 means the target is not visible.
-                                             // 0 means the target is inactive. 1 means the target is active.
-int activeTargetPosition = -1; // [encoder counts] Encoder count of the active target the linkage is moving toward
+// Variables for updating sensor readings
+const float alpha = 0.925;            // filter parameter used to weight current and past readings
+int stopTimeout = 250;                // [millis] time needed to declare a zombie stopped
+int noiseLimit = 8;                   // average spread of proximity readings for a stopped zombie
+const int lowerNoiseLimit = 5;        // noise limit for near the photosensors
+const int upperNoiseLimit = 8;        // noise limit for near the prox sensors
+const int noiseThreshold = 225;       // prox sensor reading at which noise limit switches from upper to lower
+
+// A data structure to hold proximity sensor information:
+struct Sensor{
+  float currVal;                    // the most recent proximity sensor reading
+  float prevVal;                    // the last update of proximity sensor reading
+  unsigned long prevChangeTime;     // [millis] the time at which prevVal last changed
+  int pin;                          // the input pin of the desired prox sensor
+  int direction;                    // the direction at which the zombie on the rail is traveling
+  int forwardCount;                 // number of readings which indicate the zombie is moving forward
+  int backwardCount;                // number of readings which indicate the zombie is moving backward
+};
+
+Sensor ProxSensors[4];          // An array which holds Sensor objects, representing each of the prox sensors
+int potValue = 0;               // Used to hold the reading of the potentiometer
+
+int activeTargetIndex = -1;     // index (in the activeTargets array) of the closest target to the plants
+int activeTargetPosition = -1;  // [encoder counts] Encoder count of the active target the linkage is moving toward
+
+int minIndex = -1;              // tracking index of the zombie who is closest to the plants
+float closestZombieDist = 2;    // [percentage] records the lowest percentage of rail remaining for any of the zombies   
+int idx = -1;                   // index of target, based on targetArr      
+
+bool WAIT_POS = true;           // tracking if the linkage is moving to the wait position
+
+unsigned long arrivalTime;            // timer for tracking a wait period upon reaching a desired position
+const int targetActivateTime = 350;   // time to activate a target
+float Zombies[4];                     // An array to hold information on locations of all zombies in play
+
+// float sampleTime = 1.5             // sample time in ms
 
 //** Computation of position and velocity: **//
 // CONSTANTS: 
@@ -72,16 +104,19 @@ long previousVelCompTime   = 0; // [microseconds] System clock value the last ti
 //** High-level behavior of the controller:  **//
 // CONSTANTS:
 // Target positions:
-const int CALIBRATION_VOLTAGE  = -4; // [Volt] Motor voltage used during the calibration process
-const int TARGET_1_POSITION    = 0; // [encoder counts] Motor position corresponding to first target
-const int TARGET_2_POSITION    = 0; // [encoder counts] Motor position corresponding to second target
-const int TARGET_3_POSITION    = 0; // [encoder counts] Motor position corresponding to third target
-const int TARGET_4_POSITION    = 0; // [encoder counts] Motor position corresponding to fourth target
-const int TARGET_5_POSITION    = 0; // [encoder counts] Motor position corresponding to fifth target
-const int WAIT_POSITION        = TARGET_3_POSITION; // [encoder counts] Motor position corresponding to a wait position (when no targets are active)
+const int CALIBRATION_VOLTAGE  = -9; // [Volt] Motor voltage used during the calibration process
+const int TARGET_1_POSITION    = 0;
+const int TARGET_2_POSITION    = 119; // board 3, 117 // board 6, 119
+const int TARGET_3_POSITION    = 237; // board 3, 235 // board 6, 245
+const int TARGET_4_POSITION    = 565; // board 3, 565 // board 6, 565
+const int WAIT_POSITION        = TARGET_1_POSITION; // board 3, 282; // board 6, 280
 const int LOWER_BOUND          = TARGET_1_POSITION; // [encoder counts] Position of the left end stop
 const int UPPER_BOUND          = TARGET_4_POSITION; // [encoder counts] Position of the right end stop
 const int TARGET_BAND          = 5; // [encoder counts] "Close enough" range when moving towards a target.
+
+// List of target positions to reduce redundant code
+const int targetPos[4] = {TARGET_1_POSITION, TARGET_2_POSITION, TARGET_3_POSITION, TARGET_4_POSITION};
+
 // Timing:
 //const long  WAIT_TIME          = 0; // [microseconds] Time waiting for the target to drop.
                                       // TBD - implement a timer so if the target doesn't drop, the linkage moves to a different target
@@ -90,11 +125,11 @@ const int TARGET_BAND          = 5; // [encoder counts] "Close enough" range whe
 
 //** PID Controller  **//
 // CONSTANTS:
-const float KP                    = 0; // [Volt / encoder counts] P-Gain
-const float KI                    = 0; // [Volt / (encoder counts * seconds)] I-Gain
-const float KD                    = 0; // [Volt * seconds / encoder counts] D-Gain
-const float SUPPLY_VOLTAGE        = 0; // [Volt] Supply voltage at the HBridge
-const float FRICTION_COMP_VOLTAGE = 0; // [Volt] Voltage needed to overcome friction
+const float KP             =.05;//= 0.10;                      // [Volt / encoder counts] P-Gain
+const float KI             =.0005;//= 0.001;                     // [Volt / (encoder counts * seconds)] I-Gain
+const float KD             =.0025;//= 0.005;                     // [Volt * seconds / encoder counts] D-Gain
+const float SUPPLY_VOLTAGE = 9.0;                  // [Volt] Supply voltage at the HBridge
+const float FRICTION_COMP_VOLTAGE = 3;                     // [Volt] Voltage needed to overcome friction
 // VARIABLES:
 int desiredPosition  = 0; // [encoder counts] desired motor position
 float positionError  = 0; // [encoder counts] Position error
@@ -116,7 +151,9 @@ const int PIN_NR_PWM_DIRECTION_1  = 12; // Connected to H Bridge (controls motor
 const int PIN_NR_PWM_DIRECTION_2  = 13;  // Connected to H Bridge (controls motor direction)
 const int PIN_PROXSENSE1          = A0; // Connected to proximity sensor 1
 const int PIN_PROXSENSE2          = A1; // Connected to proximity sensor 2
-const int PIN_POTENTIOMETER       = A2; // Connected to potentiometer used to test target positions
+const int PIN_PROXSENSE3          = A2; // Connected to proximity sensor 3
+const int PIN_PROXSENSE4          = A3; // Connected to proximity sensor 4
+const int PIN_POTENTIOMETER       = A4; // Connected to potentiometer used to test target positions
 
 
 // Add this line of code if you want to use two limit switches; const int PIN_NRL_LIMIT_SWITCH_2  = 11
@@ -138,6 +175,8 @@ void setup() {
   pinMode(PIN_NRL_LIMIT_SWITCH,    INPUT);
   pinMode(PIN_PROXSENSE1,          INPUT); 
   pinMode(PIN_PROXSENSE2,          INPUT);
+  pinMode(PIN_PROXSENSE3,          INPUT);
+  pinMode(PIN_PROXSENSE4,          INPUT);
   pinMode(PIN_NR_PWM_OUTPUT,       OUTPUT);
   pinMode(PIN_NR_PWM_DIRECTION_1,  OUTPUT);
   pinMode(PIN_NR_PWM_DIRECTION_2,  OUTPUT);
@@ -155,6 +194,18 @@ void setup() {
   // Begin serial communication for monitoring.
   Serial.begin(115200);
   Serial.println("Start Executing Program.");
+
+  // Initialize sensor values
+  ProxSensors[TARGET1].prevVal = analogRead(PIN_PROXSENSE1);
+  ProxSensors[TARGET2].prevVal = analogRead(PIN_PROXSENSE2);
+  ProxSensors[TARGET3].prevVal = analogRead(PIN_PROXSENSE3);
+  ProxSensors[TARGET4].prevVal = analogRead(PIN_PROXSENSE4);
+
+  // Initialize prox sensor pins
+  ProxSensors[TARGET1].pin = PIN_PROXSENSE1;
+  ProxSensors[TARGET2].pin = PIN_PROXSENSE2;
+  ProxSensors[TARGET3].pin = PIN_PROXSENSE3;
+  ProxSensors[TARGET4].pin = PIN_PROXSENSE4;
 
   // Set initial output to the motor to 0
   analogWrite(PIN_NR_PWM_OUTPUT, 0);
@@ -185,6 +236,57 @@ void loop() {
     previousMotorPosition = motorPosition;
     previousVelCompTime   = micros();
   }
+  // *****************************************************************************//
+  // We first update the sensors so our direction information stays accurate
+
+  // Loop through each of the sensors
+  for (int i = 0; i < sizeof(targetArr)/sizeof(int); i++) {
+
+    idx = targetArr[i];
+    // Updates the current sensor reading using a low pass filter 
+    ProxSensors[idx].currVal = alpha * ProxSensors[idx].currVal + (1 - alpha) * analogRead(ProxSensors[idx].pin);
+
+    // Adjusts the noise Limit based on distance to sensor (since values are not linear)
+    if (ProxSensors[idx].currVal >= noiseThreshold) {
+      noiseLimit = upperNoiseLimit;
+    } else {
+      noiseLimit = lowerNoiseLimit;
+    }
+
+    // Check if sensor is stopped
+    if (abs(ProxSensors[idx].currVal - ProxSensors[idx].prevVal) < noiseLimit) {
+      // if not enough time has passed to declare stopped or already stopped continue loop
+      if (millis() - ProxSensors[idx].prevChangeTime < stopTimeout || ProxSensors[idx].direction == STOPPED) {
+        ProxSensors[i].forwardCount = 0;
+        ProxSensors[i].backwardCount = 0;
+        continue;
+      } else {
+      // the prox sensor has been stopped for long enough that we know it is stopped
+        ProxSensors[idx].direction = STOPPED;
+      }
+    } else if (ProxSensors[idx].currVal - ProxSensors[idx].prevVal < 0){
+      // Target is moving forward, as readings decrease moving further away from the sensor
+      ProxSensors[i].forwardCount += 1;
+      // Target is moving forward
+      if (ProxSensors[i].forwardCount > 3){
+        ProxSensors[i].direction = FORWARD;
+
+        ProxSensors[i].prevVal = ProxSensors[i].currVal;
+        ProxSensors[i].prevChangeTime = millis();
+      }
+    } else {
+      // Target must be moving backward
+      ProxSensors[i].backwardCount += 1;
+      // Target is moving forward
+      if (ProxSensors[i].backwardCount > 3){
+        ProxSensors[i].direction = BACKWARD;
+        
+        ProxSensors[i].prevVal = ProxSensors[i].currVal;
+        ProxSensors[i].prevChangeTime = millis();
+      }
+    }
+  }
+  // *****************************************************************************//
   
   //******************************************************************************//
   // The state machine:
@@ -205,127 +307,99 @@ void loop() {
         // Reset the error integrator:
         integralError = 0;
         // Calibration is finalized. Transition into DETERMINE_ACTIVE_TARGETS state
-        Serial.println("State transition from CALIBRATE to DETERMINE_ACTIVE_TARGETS");
-        state = DETERMINE_ACTIVE_TARGETS;
+        Serial.println("State transition from CALIBRATE to CHOOSE_ACTIVE_TARGET");
+        state = CHOOSE_ACTIVE_TARGET;
       } 
+
       // Otherwise we continue calibrating
       break;
 
     //****************************************************************************//
-    // In the DETERMINE_ACTIVE_TARGETS state, we read the proximity sensors 10 times each, average 
-    // values to reduce noise, then use them to determine which targets are active.
-    // We then select an active target to move toward based on which targets are active.
-    // We default to TARGET_POSITION_3 if no targets are active.
-    case DETERMINE_ACTIVE_TARGETS:
-      // Reset active targets array to all UNSURE
-      for (int i = 0; i < sizeof(activeTargets)/sizeof(int); i++) {
-        activeTargets[i] = UNSURE;
+    // In the DETERMINE_ACTIVE_TARGETS state, we use the most recent reading of the photosensors to 
+    // calculate the location of each zombie.
+    // We then select an active target to move toward based on which zombie is closest to the plants.
+    // We default to WAIT_POSITION if no targets are active.
+    case CHOOSE_ACTIVE_TARGET:
+
+      // Decide what zombie is closest to the photosensor
+      // Current closest zombie is out of bounds
+      minIndex = -1;
+      // Set distance to 2 to be above any possible percentage values + noise
+      closestZombieDist = 2;
+
+      for (int i = 0; i < sizeof(targetArr)/sizeof(int); i++) {
+        // Use the target array for the proper indexes into other arrays
+        idx = targetArr[i];
+
+        // Calculate the distance to the front of the rail by taking a percentage of how much rail
+        // the zombie has left to travel.
+        Zombies[idx] = (ProxSensors[idx].currVal - ProxRange[idx][1]) / (ProxRange[idx][0] - ProxRange[idx][1]);
+
+        // Check to see if the zombie is traveling forward and it is closer than the previous zombie
+        if (ProxSensors[idx].direction == FORWARD && Zombies[idx] < closestZombieDist) {
+          // update the newest minimum value
+          closestZombieDist = Zombies[idx];
+          // update the index of the active target (in the targetArr array)
+          minIndex = i;
+        }
       }
-      // Reset activeTargetPosition to UNSURE
-      activeTargetPosition = UNSURE;
+
+      // if the min index points to a valid target, move to that target
+      if (minIndex >= 0) {
+        activeTargetIndex = targetArr[minIndex];
+        activeTargetPosition = targetPos[activeTargetIndex];
+        WAIT_POS = false;
+        // Serial.println("Setting position to something other than wait");
+      } else {
+        activeTargetPosition = WAIT_POSITION;
+        WAIT_POS = true;
+        // Serial.println("Setting position to wait position");
+      }
+
+      state = MOVE_TO_TARGET;
+      // Serial.println("Switching state to MOVE_TO_TARGET");
       
-      // Read and average 20 photosensor values
-      for (int i = 0; i < sizeof(proximitySense1Values)/sizeof(int); i++) {
-//        Serial.println(analogRead(PIN_PROXSENSE1));
-        proximitySense1Values[i] = analogRead(PIN_PROXSENSE1);
-      }
-      for (int i = 0; i < sizeof(proximitySense2Values)/sizeof(int); i++) {
-        proximitySense2Values[i] = analogRead(PIN_PROXSENSE2);
-      }
-      proximitySense1Avg = average(proximitySense1Values, sizeof(proximitySense1Values)/sizeof(int));
-      proximitySense2Avg = average(proximitySense2Values, sizeof(proximitySense2Values)/sizeof(int));
-
-
-      // Compare proximitySense1Avg and proximitySense2Avg to thresholds to determine which targets are active
-      if (proximitySense1Avg > TARGET1_PROXIMITYSENSE1_MIN) {
-        activeTargets[TARGET1] = ACTIVE;    // Target 1 is active
-        activeTargetPosition = TARGET_1_POSITION;
-      }
-      else if (proximitySense1Avg > TARGET2_PROXIMITYSENSE1_MIN && proximitySense1Avg < TARGET2_PROXIMITYSENSE1_MAX) {
-        activeTargets[TARGET1] = INACTIVE;  // Target 1 is inactive
-        activeTargets[TARGET2] = ACTIVE;    // Target 2 is active
-        activeTargetPosition = TARGET_2_POSITION;
-      }
-      else if (proximitySense1Avg > TARGET3_PROXIMITYSENSE1_MIN && proximitySense1Avg < TARGET3_PROXIMITYSENSE1_MAX) {
-        activeTargets[TARGET1] = INACTIVE;  // Target 1 is inactive
-        activeTargets[TARGET2] = INACTIVE;  // Target 2 is inactive
-        activeTargets[TARGET3] = ACTIVE;    // Target 3 is active
-        activeTargetPosition = TARGET_3_POSITION;
-      }
-      else if (proximitySense1Avg < TARGET3_PROXIMITYSENSE1_MIN) {
-        activeTargets[TARGET1] = INACTIVE;  // Target 1 is inactive
-        activeTargets[TARGET2] = INACTIVE;  // Target 2 is inactive
-        activeTargets[TARGET3] = INACTIVE;  // Target 3 is inactive
-      }
-      if (proximitySense2Avg > TARGET5_PROXIMITYSENSE2_MIN) {
-        activeTargets[TARGET5] = ACTIVE;    // Target 5 is active
-        // If activeTargetPosition has not already been changed, update it
-        if (activeTargetPosition == -1) {
-          activeTargetPosition = TARGET_5_POSITION;
-        }
-      }
-      else if (proximitySense2Avg > TARGET4_PROXIMITYSENSE2_MIN && proximitySense2Avg < TARGET4_PROXIMITYSENSE2_MAX) {
-        activeTargets[TARGET5] = INACTIVE;  // Target 5 is inactive
-        activeTargets[TARGET4] = ACTIVE;    // Target 4 is active
-        // If activeTargetPosition has not already been changed, update it
-        if (activeTargetPosition == -1) {
-          activeTargetPosition = TARGET_4_POSITION;
-        }
-      }
-      else if (proximitySense2Avg > TARGET3_PROXIMITYSENSE2_MIN && proximitySense2Avg < TARGET3_PROXIMITYSENSE2_MAX) {
-        activeTargets[TARGET5] = INACTIVE;  // Target 5 is inactive
-        activeTargets[TARGET4] = INACTIVE;  // Target 4 is inactive
-        activeTargets[TARGET3] = ACTIVE;    // Target 3 is active
-      }
-      else if (proximitySense2Avg < TARGET3_PROXIMITYSENSE2_MIN) {
-        activeTargets[TARGET5] = INACTIVE;  // Target 5 is inactive
-        activeTargets[TARGET4] = INACTIVE;  // Target 4 is inactive
-        activeTargets[TARGET3] = INACTIVE;  // Target 3 is inactive
-      }
-      if (proximitySense1Avg < TARGETNONE_PROXIMITYSENSE1_MAX && proximitySense2Avg < TARGETNONE_PROXIMITYSENSE2_MAX) {
-        for (int i = 0; i < sizeof(activeTargets)/sizeof(int); i++) {
-          activeTargets[i] = INACTIVE;  // All targets are inactive
-        }
-        activeTargetPosition = WAIT_POSITION; // Make linkage go to wait position if no targets are active
-      }
-
-      // Read potentiometer to determine which target is active USED FOR TESTING PURPOSES ONLY
-//      potValue = analogRead(PIN_POTENTIOMETER);
-//      Serial.print("potValue: ");
-//      Serial.println(potValue);
-//      if (potValue > 100 && potValue < 200) {
-//        activeTargetPosition = TARGET_1_POSITION;
-//      }
-//      else if (potValue > 300 && potValue < 400) {
-//        activeTargetPosition = TARGET_2_POSITION;
-//      }
-//      else if (potValue > 500 && potValue < 600) {
-//        activeTargetPosition = TARGET_3_POSITION;
-//      }
-//      else if (potValue > 700 && potValue < 800) {
-//        activeTargetPosition = TARGET_4_POSITION;
-//      }
-//      else if (potValue > 900 && potValue < 1000) {
-//        activeTargetPosition = TARGET_5_POSITION;
-//      }
-      
-      // Proceed to MOVE_TO_TARGET if we have a valid activeTargetPosition:
-      if (activeTargetPosition != UNSURE) {
-        state = MOVE_TO_TARGET;
-      }
       // Otherwise, we stay in DETERMINE_ACTIVE_TARGETS
       break;
+
 
     //****************************************************************************//
     // In the MOVE_TO_TARGET state, we select an active target and move toward it, or
     // move toward Target 3 (a default position) if there is no active target
     case MOVE_TO_TARGET:
+      // Serial.println("Inside MOVE_TO_TARGET");
       desiredPosition = activeTargetPosition;
-      if (motorPosition <= activeTargetPosition + TARGET_BAND && motorPosition >= activeTargetPosition - TARGET_BAND) {
-        state = DETERMINE_ACTIVE_TARGETS;
-      }
-      break;
 
+      if (motorPosition <= activeTargetPosition + TARGET_BAND && motorPosition >= activeTargetPosition - TARGET_BAND) {
+
+        if (millis() - arrivalTime > targetActivateTime || WAIT_POS){
+          // if (desiredPosition == TARGET_1_POSITION) 
+          //   motorPosition = LOWER_BOUND;
+          // else if (desiredPosition == TARGET_4_POSITION)
+          //   motorPosition = UPPER_BOUND;
+          state = CALIBRATE;
+          // if (desiredPosition == TARGET_1_POSITION)
+          // {
+          //   motorPosition = LOWER_BOUND;
+          //   state = CHOOSE_ACTIVE_TARGET;
+          // }
+          // else if (desiredPosition == TARGET_2_POSITION || desiredPosition == TARGET_3_POSITION)
+          // {
+          //   state = CALIBRATE;
+          // }
+          // if (desiredPosition == TARGET_4_POSITION)
+          // {
+          //   motorPosition = UPPER_BOUND;
+          //   state = CHOOSE_ACTIVE_TARGET;
+          // }
+        }
+      } else {
+        arrivalTime = millis();
+      }
+
+      break;
+    
+    //****************************************************************************//
     //****************************************************************************//
     // We should never reach the next bit of code, which would mean that the state
     // we are currently in doesn't exist.  So if it happens, throw an error and 
@@ -348,6 +422,7 @@ void loop() {
         motorPosition = LOWER_BOUND;  
         // Reset the error integrator:
         integralError = 0;
+        Serial.println("Limit Switch hit");
   } 
   
  
@@ -369,6 +444,15 @@ void loop() {
     desiredVoltage = KP * positionError +  
                      KI * integralError +
                      KD * velocityError;
+
+    // if (desiredPosition == TARGET_1_POSITION)
+    // {
+    //   desiredVoltage = -5;
+    // }
+    // else if (desiredPosition == TARGET_4_POSITION)
+    // {
+    //   desiredVoltage = 5;
+    // }
  
     //** Feedforward terms: **//
     // Compensate for friction.  That is, if we now the direction of 
@@ -395,7 +479,8 @@ void loop() {
     // Override the computed voltage during calibration.  In this state, we simply apply a 
     // fixed voltage to move against one of the end-stops.
     if (state==CALIBRATE) {
-      desiredVoltage = CALIBRATION_VOLTAGE      
+      // add calibration code here
+      desiredVoltage = CALIBRATION_VOLTAGE;
     }
   } else { 
     // Otherwise, the toggle switch is off, so do not run the controller, 
@@ -482,8 +567,8 @@ void printStateToSerial() {
   // in what you write out:
 
   //Serial.print("State Number:  [CALIBRATE = 1; DETERMINE_ACTIVE_TARGETS = 2; MOVE_TO_TARGET = 3]: ");
-  Serial.print("State#: "); 
-  Serial.print(state);
+  // Serial.print("State#: "); 
+  // Serial.print(state);
 
   //Serial.print("Power switch [on/off]: ");
   //Serial.print("  PWR: "); 
@@ -505,21 +590,21 @@ void printStateToSerial() {
   Serial.print("  DP: "); 
   Serial.print(desiredPosition);
 
-  //Serial.print("      Position Error [encoder counts]: ");
-  Serial.print("  PE: "); 
-  Serial.print(positionError);
+  // //Serial.print("      Position Error [encoder counts]: ");
+  // Serial.print("  PE: "); 
+  // Serial.print(positionError);
 
-  //Serial.print("      Integrated Error [encoder counts * seconds]: ");
-  Serial.print("  IE: "); 
-  Serial.print(integralError);
+  // //Serial.print("      Integrated Error [encoder counts * seconds]: ");
+  // Serial.print("  IE: "); 
+  // Serial.print(integralError);
 
-  //Serial.print("      Velocity Error [encoder counts / seconds]: ");
-  Serial.print("  VE: "); 
-  Serial.print(velocityError);
+  // //Serial.print("      Velocity Error [encoder counts / seconds]: ");
+  // Serial.print("  VE: "); 
+  // Serial.print(velocityError);
 
   //Serial.print("      Desired Output Voltage [Volt]: ");
-  Serial.print("  DV: "); 
-  Serial.print(desiredVoltage);
+  // Serial.print("  DV: "); 
+  // Serial.print(desiredVoltage);
   
   //Serial.print("      Motor Command [0-255]: ");
   //Serial.print("  MC: "); 
@@ -529,15 +614,19 @@ void printStateToSerial() {
   //Serial.print("  ED: "); 
   //Serial.print(executionDuration);
 
-  //Serial.print("      Active Targets [-1,0,1]: ");
-  Serial.print("  AT: ");
-  for (int i = 0; i < sizeof(activeTargets)/sizeof(int); i++) {
-    Serial.print(activeTargets[i]);
+  //Serial.print("      Zombie Location [% of rail left to travel]: ");
+  Serial.print("  ZL: ");
+  for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
+    Serial.print(Zombies[i]);
     Serial.print(" ");
   }
-
-//  Serial.print("  PS2: ");
-//  Serial.print(proximitySense2Avg);
+  
+  //Serial.print("      Proxsensor Direction[STOPPED or FORWARD or BACKWARD]: ");
+  Serial.print("  DR: ");
+  for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
+    Serial.print(ProxSensors[i].direction);
+    Serial.print(" ");
+  }
   
   // ALWAYS END WITH A NEWLINE.  SERIAL MONITOR WILL CRASH IF NOT
   Serial.println(); // new line

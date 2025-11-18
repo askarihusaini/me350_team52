@@ -1,13 +1,13 @@
 // CHANGE THESE VALUES
 // Definition of proximity sensor thresholds for each target:
-const int PROXIMITYSENSE1_MAX = 583;
-const int PROXIMITYSENSE2_MAX = 596;
-const int PROXIMITYSENSE3_MAX = 585;
-const int PROXIMITYSENSE4_MAX = 583;
-const int PROXIMITYSENSE1_MIN = 91;
-const int PROXIMITYSENSE2_MIN = 109;
-const int PROXIMITYSENSE3_MIN = 132;
-const int PROXIMITYSENSE4_MIN = 95;   
+const int PROXIMITYSENSE1_MAX = 598;
+const int PROXIMITYSENSE2_MAX = 594;
+const int PROXIMITYSENSE3_MAX = 607;
+const int PROXIMITYSENSE4_MAX = 610;
+const int PROXIMITYSENSE1_MIN = 105;
+const int PROXIMITYSENSE2_MIN = 124;
+const int PROXIMITYSENSE3_MIN = 118;
+const int PROXIMITYSENSE4_MIN = 99;   
 int PROX_MIN_MAX[4][2] = {{2000, 0}, {2000, 0}, {2000, 0}, {2000, 0}};
 bool printed = false;
 
