@@ -145,7 +145,8 @@ unsigned long lastExecutionTime = 0; // [microseconds] System clock value at the
 const int PIN_NR_ENCODER_A        = 2;  // Never change these, since the interrupts are attached to pins 2 and 3
 const int PIN_NR_ENCODER_B        = 3;  // Never change these, since the interrupts are attached to pins 2 and 3
 const int PIN_NR_ON_OFF_SWITCH    = 5;  // Connected to toggle switch (turns mechanism on and off)
-const int PIN_NRL_LIMIT_SWITCH    = 8;  // Connected to limit switch (mechanism calibration)
+const int PIN_NRL_LIMIT_SWITCH_LEFT    = 8;  // Connected to limit switch Left (mechanism calibration)
+const int PIN_NRL_LIMIT_SWITCH_RIGHT   = 9;
 const int PIN_NR_PWM_OUTPUT       = 11; // Connected to H Bridge (controls motor speed)
 const int PIN_NR_PWM_DIRECTION_1  = 12; // Connected to H Bridge (controls motor direction)
 const int PIN_NR_PWM_DIRECTION_2  = 13;  // Connected to H Bridge (controls motor direction)
@@ -172,7 +173,8 @@ void setup() {
   pinMode(PIN_NR_ENCODER_A,        INPUT_PULLUP);
   pinMode(PIN_NR_ENCODER_B,        INPUT_PULLUP);
   pinMode(PIN_NR_ON_OFF_SWITCH,    INPUT);
-  pinMode(PIN_NRL_LIMIT_SWITCH,    INPUT);
+  pinMode(PIN_NRL_LIMIT_SWITCH_LEFT,    INPUT);
+  pinMode(PIN_NRL_LIMIT_SWITCH_RIGHT,    INPUT);
   pinMode(PIN_PROXSENSE1,          INPUT); 
   pinMode(PIN_PROXSENSE2,          INPUT);
   pinMode(PIN_PROXSENSE3,          INPUT);
@@ -300,10 +302,20 @@ void loop() {
       // a fixed output voltage.  This happens further below.
       
       // Decide what to do next:
-      if (digitalRead(PIN_NRL_LIMIT_SWITCH)==HIGH && motorVelocity==0) { 
-        // We reached the endstop.  Update the motor position to the limit:
+      if (digitalRead(PIN_NRL_LIMIT_SWITCH_LEFT)==HIGH && motorVelocity==0) { 
+        // We reached the left endstop.  Update the motor position to the limit:
         // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
         motorPosition = LOWER_BOUND;  
+        // Reset the error integrator:
+        integralError = 0;
+        // Calibration is finalized. Transition into DETERMINE_ACTIVE_TARGETS state
+        Serial.println("State transition from CALIBRATE to CHOOSE_ACTIVE_TARGET");
+        state = CHOOSE_ACTIVE_TARGET;
+      } 
+      if (digitalRead(PIN_NRL_LIMIT_SWITCH_RIGHT)==HIGH && motorVelocity==0) { 
+        // We reached the left endstop.  Update the motor position to the limit:
+        // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
+        motorPosition = UPPER_BOUND;  
         // Reset the error integrator:
         integralError = 0;
         // Calibration is finalized. Transition into DETERMINE_ACTIVE_TARGETS state
@@ -416,10 +428,18 @@ void loop() {
 
   //******************************************************************************//
   // Recalibrate if we are in the leftmost position
-  if (digitalRead(PIN_NRL_LIMIT_SWITCH)==HIGH && motorVelocity==0) { 
+  if (digitalRead(PIN_NRL_LIMIT_SWITCH_LEFT)==HIGH && motorVelocity==0) { 
         // We reached the endstop.  Update the motor position to the limit:
         // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
         motorPosition = LOWER_BOUND;  
+        // Reset the error integrator:
+        integralError = 0;
+        Serial.println("Limit Switch hit");
+  } 
+  if (digitalRead(PIN_NRL_LIMIT_SWITCH_RIGHT)==HIGH && motorVelocity==0) { 
+        // We reached the endstop.  Update the motor position to the limit:
+        // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
+        motorPosition = UPPER_BOUND;  
         // Reset the error integrator:
         integralError = 0;
         Serial.println("Limit Switch hit");
