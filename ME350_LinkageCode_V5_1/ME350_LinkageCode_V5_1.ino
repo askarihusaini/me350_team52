@@ -16,20 +16,31 @@ const int MOVE_TO_TARGET           = 3;
 
 // VARIABLES:
 // Global variable that keeps track of the state:
-// Start the state machine in calibration state:
+// Start the state machine in calibration state:`
 int state = CALIBRATE;
 
 //** Proximity Sensors or Potentiometer: **//
 // CONSTANTS: 
 // Definition of proximity sensor Limits for each target:
-const int PROXIMITYSENSE1_MAX = 105;
-const int PROXIMITYSENSE2_MAX = 148;
-const int PROXIMITYSENSE3_MAX = 137;
-const int PROXIMITYSENSE4_MAX = 100;
-const int PROXIMITYSENSE1_MIN = 603;
-const int PROXIMITYSENSE2_MIN = 591;
-const int PROXIMITYSENSE3_MIN = 590;
-const int PROXIMITYSENSE4_MIN = 614;   
+const int PROXIMITYSENSE1_MAX = 586;     // [proximity sensor counts] Value of prox sensor 1 when zombie is closest to photosensor
+const int PROXIMITYSENSE1_MIN = 100;     // [proximity sensor counts] Value of prox sensor 1 when zombie is closest to prox sensor
+// original prox1max = 586
+// original prox1min = 96
+
+const int PROXIMITYSENSE2_MAX = 586;     // [proximity sensor counts] Value of prox sensor 2 when zombie is closest to photosensor
+const int PROXIMITYSENSE2_MIN = 135;     // [proximity sensor counts] Value of prox sensor 2 when zombie is closest to prox sensor
+// original prox2max = 586
+// original prox2min = 113
+
+const int PROXIMITYSENSE3_MAX = 586;     // [proximity sensor counts] Value of prox sensor 3 when zombie is closest to photosensor
+const int PROXIMITYSENSE3_MIN = 154; //218.95     // [proximity sensor counts] Value of prox sensor 3 when zombie is closest to prox sensor
+// original prox3max = 586
+// original prox3min = 134
+
+const int PROXIMITYSENSE4_MAX = 586;     // [proximity sensor counts] Value of prox sensor 4 when zombie is closest to photosensor
+const int PROXIMITYSENSE4_MIN = 101;     // [proximity sensor counts] Value of prox sensor 4 when zombie is closest to prox sensor
+// original prox4max = 588
+// original prox4min = 101
 
 const int ProxRange[4][2] = {{PROXIMITYSENSE1_MAX, PROXIMITYSENSE1_MIN},
                              {PROXIMITYSENSE2_MAX, PROXIMITYSENSE2_MIN},
@@ -104,12 +115,12 @@ long previousVelCompTime   = 0; // [microseconds] System clock value the last ti
 //** High-level behavior of the controller:  **//
 // CONSTANTS:
 // Target positions:
-const int CALIBRATION_VOLTAGE  = -9; // [Volt] Motor voltage used during the calibration process
-const int TARGET_1_POSITION    = 0;
-const int TARGET_2_POSITION    = 119; // board 3, 117 // board 6, 119
-const int TARGET_3_POSITION    = 237; // board 3, 235 // board 6, 245
-const int TARGET_4_POSITION    = 565; // board 3, 565 // board 6, 565
-const int WAIT_POSITION        = TARGET_1_POSITION; // board 3, 282; // board 6, 280
+const int CALIBRATION_VOLTAGE  = -4; // [Volt] Motor voltage used during the calibration process
+const int TARGET_1_POSITION    = 0; //0 // [encoder counts] Motor position corresponding to first target
+const int TARGET_2_POSITION    = 125; //151 [encoder counts] Motor position corresponding to second target
+const int TARGET_3_POSITION    = 244; //284// [encoder counts] Motor position corresponding to third target
+const int TARGET_4_POSITION    = 563; //612// [encoder counts] Motor position corresponding to fourth target
+const int WAIT_POSITION        = TARGET_3_POSITION; // [encoder counts] Motor position corresponding to a wait position (when no targets are active)
 const int LOWER_BOUND          = TARGET_1_POSITION; // [encoder counts] Position of the left end stop
 const int UPPER_BOUND          = TARGET_4_POSITION; // [encoder counts] Position of the right end stop
 const int TARGET_BAND          = 5; // [encoder counts] "Close enough" range when moving towards a target.
@@ -125,11 +136,11 @@ const int targetPos[4] = {TARGET_1_POSITION, TARGET_2_POSITION, TARGET_3_POSITIO
 
 //** PID Controller  **//
 // CONSTANTS:
-const float KP             =.05;//= 0.10;                      // [Volt / encoder counts] P-Gain
-const float KI             =.0005;//= 0.001;                     // [Volt / (encoder counts * seconds)] I-Gain
-const float KD             =.0025;//= 0.005;                     // [Volt * seconds / encoder counts] D-Gain
-const float SUPPLY_VOLTAGE = 9.0;                  // [Volt] Supply voltage at the HBridge
-const float FRICTION_COMP_VOLTAGE = 3;                     // [Volt] Voltage needed to overcome friction
+float KP             =          0.2;               // [Volt / encoder counts] P-Gain
+float KI             =          0.06;               // [Volt / (encoder counts * seconds)] I-Gain
+float KD             =          0.01;               // [Volt * seconds / encoder counts] D-Gain
+const float SUPPLY_VOLTAGE =          9;               // [Volt] Supply voltage at the HBridge
+const float FRICTION_COMP_VOLTAGE =   3.4;               // [Volt] Voltage needed to overcome friction
 // VARIABLES:
 int desiredPosition  = 0; // [encoder counts] desired motor position
 float positionError  = 0; // [encoder counts] Position error
@@ -145,8 +156,7 @@ unsigned long lastExecutionTime = 0; // [microseconds] System clock value at the
 const int PIN_NR_ENCODER_A        = 2;  // Never change these, since the interrupts are attached to pins 2 and 3
 const int PIN_NR_ENCODER_B        = 3;  // Never change these, since the interrupts are attached to pins 2 and 3
 const int PIN_NR_ON_OFF_SWITCH    = 5;  // Connected to toggle switch (turns mechanism on and off)
-const int PIN_NRL_LIMIT_SWITCH_LEFT    = 8;  // Connected to limit switch Left (mechanism calibration)
-const int PIN_NRL_LIMIT_SWITCH_RIGHT   = 9;
+const int PIN_NRL_LIMIT_SWITCH    = 8;  // Connected to limit switch (mechanism calibration)
 const int PIN_NR_PWM_OUTPUT       = 11; // Connected to H Bridge (controls motor speed)
 const int PIN_NR_PWM_DIRECTION_1  = 12; // Connected to H Bridge (controls motor direction)
 const int PIN_NR_PWM_DIRECTION_2  = 13;  // Connected to H Bridge (controls motor direction)
@@ -173,8 +183,7 @@ void setup() {
   pinMode(PIN_NR_ENCODER_A,        INPUT_PULLUP);
   pinMode(PIN_NR_ENCODER_B,        INPUT_PULLUP);
   pinMode(PIN_NR_ON_OFF_SWITCH,    INPUT);
-  pinMode(PIN_NRL_LIMIT_SWITCH_LEFT,    INPUT);
-  pinMode(PIN_NRL_LIMIT_SWITCH_RIGHT,    INPUT);
+  pinMode(PIN_NRL_LIMIT_SWITCH,    INPUT);
   pinMode(PIN_PROXSENSE1,          INPUT); 
   pinMode(PIN_PROXSENSE2,          INPUT);
   pinMode(PIN_PROXSENSE3,          INPUT);
@@ -195,7 +204,7 @@ void setup() {
 
   // Begin serial communication for monitoring.
   Serial.begin(115200);
-  Serial.println("Start Executing Program.");
+  //Serial.println("Start Executing Program.");
 
   // Initialize sensor values
   ProxSensors[TARGET1].prevVal = analogRead(PIN_PROXSENSE1);
@@ -302,24 +311,14 @@ void loop() {
       // a fixed output voltage.  This happens further below.
       
       // Decide what to do next:
-      if (digitalRead(PIN_NRL_LIMIT_SWITCH_LEFT)==HIGH && motorVelocity==0) { 
-        // We reached the left endstop.  Update the motor position to the limit:
+      if (digitalRead(PIN_NRL_LIMIT_SWITCH)==HIGH && motorVelocity==0) { 
+        // We reached the endstop.  Update the motor position to the limit:
         // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
         motorPosition = LOWER_BOUND;  
         // Reset the error integrator:
         integralError = 0;
         // Calibration is finalized. Transition into DETERMINE_ACTIVE_TARGETS state
-        Serial.println("State transition from CALIBRATE to CHOOSE_ACTIVE_TARGET");
-        state = CHOOSE_ACTIVE_TARGET;
-      } 
-      if (digitalRead(PIN_NRL_LIMIT_SWITCH_RIGHT)==HIGH && motorVelocity==0) { 
-        // We reached the left endstop.  Update the motor position to the limit:
-        // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
-        motorPosition = UPPER_BOUND;  
-        // Reset the error integrator:
-        integralError = 0;
-        // Calibration is finalized. Transition into DETERMINE_ACTIVE_TARGETS state
-        Serial.println("State transition from CALIBRATE to CHOOSE_ACTIVE_TARGET");
+        //Serial.println("State transition from CALIBRATE to CHOOSE_ACTIVE_TARGET");
         state = CHOOSE_ACTIVE_TARGET;
       } 
 
@@ -385,25 +384,7 @@ void loop() {
       if (motorPosition <= activeTargetPosition + TARGET_BAND && motorPosition >= activeTargetPosition - TARGET_BAND) {
 
         if (millis() - arrivalTime > targetActivateTime || WAIT_POS){
-          // if (desiredPosition == TARGET_1_POSITION) 
-          //   motorPosition = LOWER_BOUND;
-          // else if (desiredPosition == TARGET_4_POSITION)
-          //   motorPosition = UPPER_BOUND;
-          state = CALIBRATE;
-          // if (desiredPosition == TARGET_1_POSITION)
-          // {
-          //   motorPosition = LOWER_BOUND;
-          //   state = CHOOSE_ACTIVE_TARGET;
-          // }
-          // else if (desiredPosition == TARGET_2_POSITION || desiredPosition == TARGET_3_POSITION)
-          // {
-          //   state = CALIBRATE;
-          // }
-          // if (desiredPosition == TARGET_4_POSITION)
-          // {
-          //   motorPosition = UPPER_BOUND;
-          //   state = CHOOSE_ACTIVE_TARGET;
-          // }
+          state = CHOOSE_ACTIVE_TARGET;
         }
       } else {
         arrivalTime = millis();
@@ -417,9 +398,9 @@ void loop() {
     // we are currently in doesn't exist.  So if it happens, throw an error and 
     // stop the program:
     default: 
-      Serial.println("Statemachine reached at state that it cannot handle.  ABORT!!!!");
-      Serial.print("Found the following unknown state: ");
-      Serial.println(state);
+      //Serial.println("Statemachine reached at state that it cannot handle.  ABORT!!!!");
+      //Serial.print("Found the following unknown state: ");
+      //Serial.println(state);
       while (1); // infinite loop to halt the program
     break;
   }
@@ -428,21 +409,13 @@ void loop() {
 
   //******************************************************************************//
   // Recalibrate if we are in the leftmost position
-  if (digitalRead(PIN_NRL_LIMIT_SWITCH_LEFT)==HIGH && motorVelocity==0) { 
+  if (digitalRead(PIN_NRL_LIMIT_SWITCH)==HIGH && motorVelocity==0) { 
         // We reached the endstop.  Update the motor position to the limit:
         // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
         motorPosition = LOWER_BOUND;  
         // Reset the error integrator:
         integralError = 0;
-        Serial.println("Limit Switch hit");
-  } 
-  if (digitalRead(PIN_NRL_LIMIT_SWITCH_RIGHT)==HIGH && motorVelocity==0) { 
-        // We reached the endstop.  Update the motor position to the limit:
-        // (NOTE: If the limit switch is on the right, this must be UPPER_BOUND)
-        motorPosition = UPPER_BOUND;  
-        // Reset the error integrator:
-        integralError = 0;
-        Serial.println("Limit Switch hit");
+        //Serial.println("Limit Switch hit");
   } 
   
  
@@ -464,15 +437,6 @@ void loop() {
     desiredVoltage = KP * positionError +  
                      KI * integralError +
                      KD * velocityError;
-
-    // if (desiredPosition == TARGET_1_POSITION)
-    // {
-    //   desiredVoltage = -5;
-    // }
-    // else if (desiredPosition == TARGET_4_POSITION)
-    // {
-    //   desiredVoltage = 5;
-    // }
  
     //** Feedforward terms: **//
     // Compensate for friction.  That is, if we now the direction of 
@@ -509,7 +473,7 @@ void loop() {
     // .. and reset the integrator of the error:
     integralError = 0;
     // Produce some debugging output:
-    Serial.println("The toggle switch is off.  Motor Stopped.");
+    //Serial.println("The toggle switch is off.  Motor Stopped.");
   } 
   // End of  else onOffSwitch==HIGH
   
@@ -581,75 +545,83 @@ void updateMotorPosition() {
 // be selective in what you write out:                              //
 //////////////////////////////////////////////////////////////////////
 void printStateToSerial() {
-  //*********************************************************************//
-  // Send a status of the controller to the serial monitor.  
-  // Each character will take 85 microseconds to send, so be selective
-  // in what you write out:
+//   //*********************************************************************//
+//   // Send a status of the controller to the serial monitor.  
+//   // Each character will take 85 microseconds to send, so be selective
+//   // in what you write out:
 
   //Serial.print("State Number:  [CALIBRATE = 1; DETERMINE_ACTIVE_TARGETS = 2; MOVE_TO_TARGET = 3]: ");
-  // Serial.print("State#: "); 
-  // Serial.print(state);
+  //Serial.print("State#: "); 
+  //Serial.print(state);
 
-  //Serial.print("Power switch [on/off]: ");
-  //Serial.print("  PWR: "); 
-  //Serial.print(digitalRead(PIN_NR_ON_OFF_SWITCH));
+//   //Serial.print("Power switch [on/off]: ");
+//   //Serial.print("  PWR: "); 
+//   //Serial.print(digitalRead(PIN_NR_ON_OFF_SWITCH));
 
-  //Serial.print("      Motor Position [encoder counts]: ");
-  Serial.print("  MP: "); 
-  Serial.print(motorPosition);
+//   //Serial.print("      Motor Position [encoder counts]: ");
+//   Serial.print("  MP: "); 
+//   Serial.print(motorPosition);
 
-  //Serial.print("      Motor Velocity [encoder counts / seconds]: ");
-  Serial.print("  MV: "); 
-  Serial.print(motorVelocity);
+//   //Serial.print("      Motor Velocity [encoder counts / seconds]: ");
+//   Serial.print("  MV: "); 
+//   Serial.print(motorVelocity);
 
-  //Serial.print("      Encoder Status [4 bit value]: ");
-  //Serial.print("  ES: "); 
-  //Serial.print(encoderStatus);
+//   //Serial.print("      Encoder Status [4 bit value]: ");
+//   //Serial.print("  ES: "); 
+//   //Serial.print(encoderStatus);
 
-  //Serial.print("      Target Position [encoder counts]: ");
-  Serial.print("  DP: "); 
-  Serial.print(desiredPosition);
+//   //Serial.print("      Target Position [encoder counts]: ");
+//   Serial.print("  DP: "); 
+//   Serial.print(desiredPosition);
 
-  // //Serial.print("      Position Error [encoder counts]: ");
-  // Serial.print("  PE: "); 
-  // Serial.print(positionError);
+//   // //Serial.print("      Position Error [encoder counts]: ");
+//   // Serial.print("  PE: "); 
+//   // Serial.print(positionError);
 
-  // //Serial.print("      Integrated Error [encoder counts * seconds]: ");
-  // Serial.print("  IE: "); 
-  // Serial.print(integralError);
+//   // //Serial.print("      Integrated Error [encoder counts * seconds]: ");
+//   // Serial.print("  IE: "); 
+//   // Serial.print(integralError);
 
-  // //Serial.print("      Velocity Error [encoder counts / seconds]: ");
-  // Serial.print("  VE: "); 
-  // Serial.print(velocityError);
+//   // //Serial.print("      Velocity Error [encoder counts / seconds]: ");
+//   // Serial.print("  VE: "); 
+//   // Serial.print(velocityError);
 
-  //Serial.print("      Desired Output Voltage [Volt]: ");
-  // Serial.print("  DV: "); 
-  // Serial.print(desiredVoltage);
+//   //Serial.print("      Desired Output Voltage [Volt]: ");
+//   Serial.print("  DV: "); 
+//   Serial.print(desiredVoltage);
   
-  //Serial.print("      Motor Command [0-255]: ");
-  //Serial.print("  MC: "); 
-  //Serial.print(motorCommand);
+//   //Serial.print("      Motor Command [0-255]: ");
+//   //Serial.print("  MC: "); 
+//   //Serial.print(motorCommand);
 
-  //Serial.print("      Execution Duration [microseconds]: ");
-  //Serial.print("  ED: "); 
-  //Serial.print(executionDuration);
+//   //Serial.print("      Execution Duration [microseconds]: ");
+//   //Serial.print("  ED: "); 
+//   //Serial.print(executionDuration);
 
-  //Serial.print("      Zombie Location [% of rail left to travel]: ");
-  Serial.print("  ZL: ");
-  for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
-    Serial.print(Zombies[i]);
-    Serial.print(" ");
-  }
+//   //Serial.print("      Active Targets [-1,0,1]: ");
+//   Serial.print("  ZL: ");
+//   for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
+//     Serial.print(Zombies[i]);
+//     Serial.print(" ");
+//   }
+
+// //  Serial.print("  PS2: ");
+// //  Serial.print(proximitySense2Avg);
   
-  //Serial.print("      Proxsensor Direction[STOPPED or FORWARD or BACKWARD]: ");
-  Serial.print("  DR: ");
-  for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
-    Serial.print(ProxSensors[i].direction);
-    Serial.print(" ");
-  }
+  //Serial.print("  DR: ");
+  //for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
+    //Serial.print(ProxSensors[i].direction);
+    //Serial.print(" ");
+  //}
+
+//   Serial.print("  PR: ");
+//   for (int i = 0; i < sizeof(Zombies)/sizeof(float); i++) {
+//     Serial.print(Zombies[i]);
+//     Serial.print(" ");
+//   }
   
   // ALWAYS END WITH A NEWLINE.  SERIAL MONITOR WILL CRASH IF NOT
-  Serial.println(); // new line
+//Serial.println(); // new line
 }
 // End of Serial Out
 
